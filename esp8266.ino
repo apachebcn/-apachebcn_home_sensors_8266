@@ -158,48 +158,71 @@ void loop()
     // Gestión robusta de WiFi
     gestionarWiFi();
 
-    // Lectura del DHT
-    if (now - lastLectura >= LECTURA_DELAY)
-    {
+
+    // Lectura del DHT solo cada LECTURA_DELAY
+    static float lastTemp = NAN, lastHum = NAN;
+    if (now - lastLectura >= LECTURA_DELAY) {
         lastLectura = now;
-
-        float t = NAN;
-        float h = NAN;
-
-        if (leerDHTRobusto(t, h))
-        {
-            temp = t;
-            hum  = h;
-
-            // Identificación textual según ROOM_ID usando función común
-            Serial.print("ROOM #");
-            Serial.print(ROOM_ID);
-            Serial.print(" (");
-            Serial.print(getRoomName(ROOM_ID));
-            Serial.print(") Temp: ");
-            Serial.print(temp);
-            Serial.print(" C  Hum: ");
-            Serial.print(hum);
-            Serial.println(" %");
-        }
-        else
-        {
+        float t = NAN, h = NAN;
+        if (leerDHTRobusto(t, h)) {
+            lastTemp = t;
+            lastHum = h;
+        } else {
             Serial.println("Lectura DHT inválida/inestable, usando último valor válido.");
         }
+        // Mostrar estado y segundos para el próximo envío SOLO cuando hay nueva lectura
+        Serial.print("ROOM #");
+        Serial.print(ROOM_ID);
+        Serial.print(" (");
+        Serial.print(getRoomName(ROOM_ID));
+        Serial.print(") Temp: ");
+        Serial.print(lastTemp);
+        Serial.print(" C  Hum: ");
+        Serial.print(lastHum);
+        Serial.print(" % (");
+        unsigned long ms_rest = 0;
+        if (lastEnvio == 0) {
+            ms_rest = 0;
+        } else if (now >= lastEnvio) {
+            ms_rest = (lastEnvio + ENVIO_DELAY > now) ? (lastEnvio + ENVIO_DELAY - now) : 0;
+        } else {
+            ms_rest = 0;
+        }
+        Serial.print(ms_rest / 1000);
+        Serial.println("s para envío)");
     }
 
-    // Envío de datos
-    if (now - lastEnvio >= ENVIO_DELAY)
-    {
-        lastEnvio = now;
-
-        if (WiFi.status() == WL_CONNECTED && !isnan(temp) && !isnan(hum))
-        {
+    // Primer envío tras conectar WiFi y tener datos válidos, o siguientes cada ENVIO_DELAY
+    static bool primerEnvioHecho = false;
+    bool readyToSend = false;
+    if (!primerEnvioHecho && WiFi.status() == WL_CONNECTED && !isnan(lastTemp) && !isnan(lastHum)) {
+        readyToSend = true;
+        primerEnvioHecho = true;
+    } else if (primerEnvioHecho && (now - lastEnvio >= ENVIO_DELAY)) {
+        readyToSend = true;
+    }
+    if (readyToSend) {
+        if (WiFi.status() == WL_CONNECTED && !isnan(lastTemp) && !isnan(lastHum)) {
             HTTPClient https;
-            // ...envío de datos...
-        }
-        else
-        {
+            String url = SENSOR_URL;
+            url.replace("%TEMPERATURE%", String(lastTemp));
+            url.replace("%HUMIDITY%",   String(lastHum));
+            url.replace("ROOM_ID",   String(ROOM_ID));
+            url.replace("APIKEY_PASS",  APIKEY_PASS);
+
+            Serial.print("Enviando: ");
+            Serial.println(url);
+
+            if (https.begin(client, url)) {
+                int code = https.GET();
+                Serial.print("HTTP code: ");
+                Serial.println(code);
+                https.end();
+                lastEnvio = now;
+            } else {
+                Serial.println("Error iniciando HTTPS");
+            }
+        } else {
             Serial.println("No se envía: sin WiFi o sin datos válidos.");
         }
     }
