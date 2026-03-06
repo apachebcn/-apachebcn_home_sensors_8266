@@ -8,4 +8,4 @@ void procesarComandoSerial();
 
 extern char WIFI_USER[32];
 extern char WIFI_PASS[32];
-extern int SENSOR_NUM;
+extern int ROOM_ID;

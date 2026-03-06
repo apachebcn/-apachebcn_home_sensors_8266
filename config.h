@@ -5,4 +5,4 @@
 #define ENVIO_DELAY 300000     // 180 segundos para enviar datos a la URL
 
 // Url de envío al servidor
-#define SENSOR_URL "https://sensors.pedroreinarojas.com/api/write_data/?apikey=APIKEY_PASS&num=SENSOR_NUM&t=%TEMPERATURE%&h=%HUMIDITY%"
+#define SENSOR_URL "https://sensors.pedroreinarojas.com/api/write_data/?apikey=APIKEY_PASS&room=ROOM_ID&temp=%TEMPERATURE%&hum=%HUMIDITY%"
