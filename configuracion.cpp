@@ -1,9 +1,8 @@
 #include <EEPROM.h>
 #include "configuracion.h"
+#include "functions.h"
+#include "otaUpdate.h"
 #include "version.h"
-
-// Prototipo para poder usar getRoomName en este archivo
-const char* getRoomName(int id);
 
 char WIFI_USER[32] = "";
 char WIFI_PASS[32] = "";
@@ -14,7 +13,16 @@ int ROOM_ID = 1;
 #define ADDR_WIFI_PASS 32
 #define ADDR_SENSOR_NUM 64
 
-void cargarConfigDesdeEEPROM() {
+void limpiarEEPROM()
+{
+    EEPROM.begin(EEPROM_SIZE);
+    for (int i = 0; i < EEPROM_SIZE; i++) EEPROM.write(i, 0);
+    EEPROM.commit();
+    Serial.println("EEPROM limpiada. Reinicie el dispositivo y configure de nuevo.");
+}
+
+void cargarConfigDesdeEEPROM()
+{
     EEPROM.begin(EEPROM_SIZE);
     for (int i = 0; i < 32; i++) WIFI_USER[i] = EEPROM.read(ADDR_WIFI_USER + i);
     for (int i = 0; i < 32; i++) WIFI_PASS[i] = EEPROM.read(ADDR_WIFI_PASS + i);
@@ -24,14 +32,16 @@ void cargarConfigDesdeEEPROM() {
     WIFI_PASS[31] = '\0';
 }
 
-void guardarConfigEnEEPROM() {
+void guardarConfigEnEEPROM()
+{
     for (int i = 0; i < 32; i++) EEPROM.write(ADDR_WIFI_USER + i, WIFI_USER[i]);
     for (int i = 0; i < 32; i++) EEPROM.write(ADDR_WIFI_PASS + i, WIFI_PASS[i]);
     EEPROM.write(ADDR_SENSOR_NUM, ROOM_ID);
     EEPROM.commit();
 }
 
-void mostrarConfigPorSerial() {
+void mostrarConfigPorSerial()
+{
     Serial.println("CONFIGURACION ACTUAL:");
     Serial.print("VERSION: ");
     Serial.println(VERSION);
@@ -48,55 +58,86 @@ void mostrarConfigPorSerial() {
     Serial.println("\nPara cambiar: CONFIG ROOM_ID=valor");
 }
 
-void procesarComandoSerial() {
+void procesarComandoSerial()
+{
     static String buffer = "";
-    while (Serial.available()) {
+    while (Serial.available())
+    {
         char c = Serial.read();
         if (c == '\r') continue; // Ignorar retorno de carro
-        if (c == '\n') {
+        if (c == '\n')
+        {
             buffer.trim();
-            if (buffer.length() > 0) {
+            if (buffer.length() > 0)
+            {
                 String bufferUpper = buffer;
                 bufferUpper.toUpperCase();
-                if (bufferUpper == "CONFIG") {
+                if (bufferUpper == "OTA UPDATE")
+                {
+                    Serial.println("Comando OTA UPDATE recibido.");
+                    otaUpdate();
+                }
+                if (bufferUpper == "CONFIG")
+                {
                     mostrarConfigPorSerial();
-                } else if (bufferUpper.startsWith("CONFIG ")) {
+                }
+                else if (bufferUpper.startsWith("CONFIG CLEAR"))
+                {
+                    limpiarEEPROM();
+                }
+                else if (bufferUpper.startsWith("CONFIG "))
+                {
                     String resto = buffer.substring(7);
                     int eq = resto.indexOf('=');
-                    if (eq > 0) {
+                    if (eq > 0)
+                    {
                         String var = resto.substring(0, eq);
                         String val = resto.substring(eq + 1);
                         var.trim(); val.trim();
-                        if (var.equalsIgnoreCase("WIFI_USER")) {
+                        if (var.equalsIgnoreCase("WIFI_USER"))
+                        {
                             val.toCharArray(WIFI_USER, 32);
                             guardarConfigEnEEPROM();
                             Serial.println("WIFI_USER actualizado");
-                        } else if (var.equalsIgnoreCase("WIFI_PASS")) {
+                        }
+                        else if (var.equalsIgnoreCase("WIFI_PASS"))
+                        {
                             val.toCharArray(WIFI_PASS, 32);
                             guardarConfigEnEEPROM();
                             Serial.println("WIFI_PASS actualizado");
-                        } else if (var.equalsIgnoreCase("ROOM_ID")) {
+                        }
+                        else if (var.equalsIgnoreCase("ROOM_ID"))
+                        {
                             int num = val.toInt();
-                            if (num >= 1 && num <= 5) {
+                            if (num >= 1 && num <= 5)
+                            {
                                 ROOM_ID = num;
                                 guardarConfigEnEEPROM();
                                 Serial.print("ROOM_ID actualizado a: ");
                                 Serial.println(ROOM_ID);
                                 Serial.print("Nombre de sala: ");
                                 Serial.println(getRoomName(ROOM_ID));
-                            } else {
+                            }
+                            else
+                            {
                                 Serial.println("Valor de ROOM_ID inválido (1-5)");
                             }
-                        } else {
+                        }
+                        else
+                        {
                             Serial.println("Variable desconocida");
                         }
-                    } else {
+                    }
+                    else
+                    {
                         Serial.println("Formato incorrecto. Usa: CONFIG VARIABLE=valor");
                     }
                 }
             }
             buffer = "";
-        } else {
+        }
+        else
+        {
             buffer += c;
         }
     }

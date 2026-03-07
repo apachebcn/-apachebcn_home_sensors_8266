@@ -1,6 +1,8 @@
+void limpiarEEPROM();
 #pragma once
 #include <Arduino.h>
 
+void limpiarEEPROM();
 void cargarConfigDesdeEEPROM();
 void guardarConfigEnEEPROM();
 void mostrarConfigPorSerial();
