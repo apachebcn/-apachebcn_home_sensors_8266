@@ -10,7 +10,7 @@
 void connectWifi();
 
 // Data transmission
-void sendData();
+void sendData(bool force);
 void handleServer();
 
 #endif // ESP8266_H

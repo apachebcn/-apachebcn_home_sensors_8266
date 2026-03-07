@@ -16,7 +16,6 @@ const char* getRoomName(int id);
 bool testRange(float t, float h);
 bool readDht(float &t, float &h);
 void readData();
-void sendData();
 
 // Temperature and humidity sensor functions
 void initSensor();
@@ -30,6 +29,6 @@ bool connectToWiFi();
 void disconnectWiFi();
 
 // Data transmission functions
-void sendData(float temperature, float humidity);
+void sendData(bool force = false);
 
 #endif // FUNCTIONS_H

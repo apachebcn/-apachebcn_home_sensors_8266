@@ -104,9 +104,9 @@ void readData()
         Serial.print(getRoomName(ROOM_ID));
         Serial.print(") Temp: ");
         Serial.print(lastTemp);
-        Serial.print(" C  Hum: ");
+        Serial.print("C  Hum: ");
         Serial.print(lastHum);
-        Serial.print(" % (");
+        Serial.print("% (");
         unsigned long ms_rest = 0;
         if (lastEnvio == 0)
         {
@@ -126,10 +126,10 @@ void readData()
 }
 
 
-void sendData()
+void sendData(bool force)
 {
     bool readyToSend = false;
-    if (!lastSent && WiFi.status() == WL_CONNECTED && !isnan(lastTemp) && !isnan(lastHum))
+    if (force || (!lastSent && WiFi.status() == WL_CONNECTED && !isnan(lastTemp) && !isnan(lastHum)))
     {
         readyToSend = true;
         lastSent = true;
@@ -142,6 +142,7 @@ void sendData()
     {
         if (WiFi.status() == WL_CONNECTED && !isnan(lastTemp) && !isnan(lastHum))
         {
+            // ...envío normal...
             HTTPClient https;
             String url = SENSOR_URL;
             url.replace("%TEMPERATURE%", String(lastTemp));
@@ -203,6 +204,19 @@ void sendData()
             else
             {
                 Serial.println("Error iniciando HTTPS");
+            }
+        }
+        else if (force)
+        {
+            Serial.println("[SEND DATA] No hay datos válidos, intentando leer sensor...");
+            float t = NAN, h = NAN;
+            if (readDht(t, h)) {
+                lastTemp = t;
+                lastHum = h;
+                Serial.println("[SEND DATA] Lectura de sensor exitosa, reintentando envío...");
+                sendData(false); // Llama de nuevo sin force para evitar bucle
+            } else {
+                Serial.println("[SEND DATA] No se pudo obtener datos válidos del sensor. No se envía.");
             }
         }
         else

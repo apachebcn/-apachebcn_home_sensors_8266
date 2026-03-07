@@ -42,20 +42,20 @@ void guardarConfigEnEEPROM()
 
 void mostrarConfigPorSerial()
 {
+    Serial.println("");
+    Serial.println("");
     Serial.println("CONFIGURACION ACTUAL:");
-    Serial.print("VERSION: ");
-    Serial.println(VERSION);
-    Serial.print("WIFI_USER: "); Serial.println(WIFI_USER);
-    Serial.print("WIFI_PASS: "); Serial.println(WIFI_PASS);
-    Serial.print("ROOM_ID: "); Serial.println(ROOM_ID);
-    if (ROOM_ID == 0) Serial.println("(NO CONFIGURADO)");
+    Serial.print(" - VERSION: "); Serial.println(VERSION);
+    Serial.print(" - WIFI_USER: "); Serial.println(WIFI_USER);
+    Serial.print(" - WIFI_PASS: "); Serial.println(WIFI_PASS);
+    Serial.print(" - ROOM_ID: "); if (ROOM_ID == 0) Serial.println("   (NO CONFIGURADO)"); else Serial.println(ROOM_ID);
     Serial.println("\nOpciones ROOM_ID:");
     Serial.println("  1: CALLE");
     Serial.println("  2: DORMITORIO MATRIMONIO");
     Serial.println("  3: OFICINA");
     Serial.println("  4: WC ARRIBA");
     Serial.println("  5: COMEDOR");
-    Serial.println("\nPara cambiar: CONFIG ROOM_ID=valor");
+    Serial.println("");
 }
 
 void procesarComandoSerial()
@@ -72,6 +72,35 @@ void procesarComandoSerial()
             {
                 String bufferUpper = buffer;
                 bufferUpper.toUpperCase();
+                if (bufferUpper == "HELP")
+                {
+                    Serial.println("");
+                    Serial.println("");
+                    Serial.println("Comandos disponibles:");
+                    Serial.println("  HELP - Muestra este mensaje");
+                    Serial.println("  REBOOT - Reinicia el dispositivo");
+                    Serial.println("  SEND - Envía los datos actuales");
+                    Serial.println("  OTA UPDATE - Inicia actualización OTA");
+                    Serial.println("  CONFIG - Muestra la configuración actual");
+                    Serial.println("  CONFIG CLEAR - Limpia la EEPROM");
+                    Serial.println("  CONFIG WIFI_USER=valor - Cambia el usuario WiFi");
+                    Serial.println("  CONFIG WIFI_PASS=valor - Cambia la contraseña WiFi");
+                    Serial.println("  CONFIG ROOM_ID=valor - Cambia la sala (1-5)");
+                    Serial.println("");
+                    return;
+                }
+                if (bufferUpper == "REBOOT")
+                {
+                    Serial.println("Reiniciando dispositivo...");
+                    ESP.restart();
+                    return;
+                }
+                if (bufferUpper == "SEND")
+                {
+                    Serial.println("COMANDO SEND DATA");
+                    sendData(true);
+                    return;
+                }
                 if (bufferUpper == "OTA UPDATE")
                 {
                     Serial.println("Comando OTA UPDATE recibido.");

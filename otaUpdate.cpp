@@ -15,8 +15,7 @@ void otaLedBlink()
 void otaUpdate()
 {
     Serial.printf("Iniciando actualización OTA desde URL: %s\n", OTA_URL);
-    WiFiClientSecure client;
-    client.setInsecure();
+    WiFiClient client;
     // Iniciar parpadeo rápido del LED
     pinMode(LED_BUILTIN, OUTPUT);
     otaLedState = false;
