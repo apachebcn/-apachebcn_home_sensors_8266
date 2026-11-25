@@ -18,6 +18,10 @@ float lastTemp = NAN;
 float lastHum = NAN;
 bool lastSent = false;
 
+// Watchdog del loop
+volatile unsigned long ultimoLoopMs = 0;
+volatile bool watchdogActivo = true;
+
 extern DHT dht;
 extern WiFiClientSecure client;
 extern char WIFI_USER[32];
@@ -267,5 +271,20 @@ void connectWifi()
     {
         if (wifiReintentos > 0) Serial.println("[DEBUG] ¡WiFi conectado!");
         wifiReintentos = 0;
+    }
+}
+
+
+// Watchdog: lo llama un Ticker cada segundo. Si loop() lleva demasiado tiempo
+// sin avanzar (p.ej. un GET() colgado), reinicia el equipo.
+void watchdogComprobar()
+{
+    if (!watchdogActivo)
+    {
+        return;
+    }
+    if (millis() - ultimoLoopMs > WATCHDOG_LIMITE_MS)
+    {
+        ESP.restart();
     }
 }

@@ -3,6 +3,10 @@
 #include "otaUpdate.h"
 #include <Ticker.h>
 
+// Watchdog del loop (definido en functions.cpp)
+extern volatile bool watchdogActivo;
+extern volatile unsigned long ultimoLoopMs;
+
 Ticker otaTicker;
 volatile bool otaLedState = false;
 
@@ -14,6 +18,9 @@ void otaLedBlink()
 
 void otaUpdate()
 {
+    // La descarga del firmware puede tardar más que el watchdog: desactivarlo
+    watchdogActivo = false;
+
     Serial.printf("Iniciando actualización OTA desde URL: %s\n", OTA_URL);
     WiFiClient client;
     // Iniciar parpadeo rápido del LED
@@ -25,6 +32,9 @@ void otaUpdate()
 
     otaTicker.detach();
     digitalWrite(LED_BUILTIN, HIGH); // Apagar LED (activo bajo)
+
+    watchdogActivo = true;
+    ultimoLoopMs = millis();
 
     switch (ret)
     {

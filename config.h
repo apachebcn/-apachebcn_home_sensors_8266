@@ -8,6 +8,9 @@
 #define LECTURA_DELAY 5000    // 5 segundos para mostrar en Serial
 #define ENVIO_DELAY 300000     // 180 segundos para enviar datos a la URL
 
+// Watchdog: si loop() no avanza en este tiempo (p.ej. un GET() colgado), se reinicia el ESP
+#define WATCHDOG_LIMITE_MS 60000UL
+
 #define APIKEY_PASS "XCDEFGHI1234221390"
 
 // Url de envío al servidor

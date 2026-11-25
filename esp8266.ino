@@ -2,6 +2,7 @@
 #include <ESP8266HTTPClient.h>
 #include <WiFiClientSecure.h>
 #include <DHT.h>
+#include <Ticker.h>
 
 #include "esp8266.h"
 #include "config.h"
@@ -18,6 +19,10 @@ extern char WIFI_PASS[32];
 
 
 DHT dht(DHTPIN, DHTTYPE);
+
+// Watchdog: si el loop se queda bloqueado (GET() colgado, DHT atascado...)
+// el Ticker reinicia el equipo
+Ticker tickerWatchdog;
 
 // Cliente HTTPS global
 WiFiClientSecure client;
@@ -55,10 +60,14 @@ void setup()
         Serial.println("WiFi NO CONFIGURADO. Use 'CONFIG SET WIFI_USER=...' y 'CONFIG SET WIFI_PASS=...' por Serial.");
     }
     lastEnvio = millis() - ENVIO_DELAY;
+
+    ultimoLoopMs = millis();
+    tickerWatchdog.attach_ms(1000, watchdogComprobar);
 }
 
 void loop()
 {
+    ultimoLoopMs = millis();  // alimenta el watchdog
     procesarComandoSerial();
 
     // Reinicio preventivo cada 24h

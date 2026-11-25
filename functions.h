@@ -12,10 +12,15 @@ extern float lastTemp;
 extern float lastHum;
 extern bool lastSent;
 
+// Watchdog del loop (lo alimenta loop() y lo vigila un Ticker)
+extern volatile unsigned long ultimoLoopMs;
+extern volatile bool watchdogActivo;
+
 const char* getRoomName(int id);
 bool testRange(float t, float h);
 bool readDht(float &t, float &h);
 void readData();
+void watchdogComprobar();
 
 // Temperature and humidity sensor functions
 void initSensor();
