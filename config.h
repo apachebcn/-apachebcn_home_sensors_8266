@@ -1,5 +1,5 @@
-#define MIN_TEMP 0.0    // Menos de 0°C no es válido
-#define MIN_HUM 35.0    // Menos de 35% no es válido
+#define MIN_TEMP -40.0  // Rango real del DHT22 (-40..80). Antes 0.0: una helada se descartaba como lectura inválida
+#define MIN_HUM 0.0     // Rango real del DHT22 (0..100). Antes 35.0: la humedad baja se descartaba como lectura inválida
 #define DHT_REINTENTOS 3
 #define DHT_REINTENTO_MS 2200
 #define DHTPIN 4          // D2 en NodeMCU
