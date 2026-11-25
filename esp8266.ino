@@ -1,8 +1,8 @@
 #include <ESP8266WiFi.h>
 #include <ESP8266HTTPClient.h>
 #include <WiFiClientSecure.h>
-#include <DHT.h>
 #include <Ticker.h>
+#include <DHT.h>
 
 #include "esp8266.h"
 #include "config.h"
@@ -59,8 +59,7 @@ void setup()
     {
         Serial.println("WiFi NO CONFIGURADO. Use 'CONFIG SET WIFI_USER=...' y 'CONFIG SET WIFI_PASS=...' por Serial.");
     }
-    lastEnvio = millis() - ENVIO_DELAY;
-
+    proximoEnvio = PRIMER_ENVIO_MS;  // el primer envío se hace 10 s después de arrancar
     ultimoLoopMs = millis();
     tickerWatchdog.attach_ms(1000, watchdogComprobar);
 }

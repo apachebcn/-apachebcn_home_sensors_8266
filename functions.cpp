@@ -13,10 +13,15 @@
 // Global variable definitions (only here)
 unsigned long now = 0;
 unsigned long lastLectura = 0;
-unsigned long lastEnvio = 0;
+unsigned long proximoEnvio = 0;
 float lastTemp = NAN;
 float lastHum = NAN;
-bool lastSent = false;
+
+// Estado para la autorrecuperación del sensor
+unsigned long ultimaLecturaOk = 0;  // millis() de la última lectura válida
+unsigned int fallosDht = 0;         // lecturas fallidas consecutivas
+unsigned int fallosEnvio = 0;       // envíos fallidos consecutivos
+bool avisadoSinDatos = false;       // para no repetir el aviso en cada reintento
 
 // Watchdog del loop
 volatile unsigned long ultimoLoopMs = 0;
@@ -46,6 +51,11 @@ const char* getRoomName(int id)
 bool testRange(float t, float h)
 {
     if (isnan(t) || isnan(h))
+    {
+        return false;
+    }
+    // Un DHT22 averiado devuelve 0,0 / 0,0: eso no es una lectura real
+    if (t == 0.0 && h == 0.0)
     {
         return false;
     }
@@ -97,10 +107,36 @@ void readData()
         {
             lastTemp = t;
             lastHum = h;
+            ultimaLecturaOk = now;
+            fallosDht = 0;
         }
         else
         {
-            Serial.println("Lectura DHT inválida/inestable, usando último valor válido.");
+            fallosDht++;
+            Serial.print("Lectura DHT inválida/inestable (fallo ");
+            Serial.print(fallosDht);
+            Serial.println("), usando último valor válido.");
+
+            // Recuperación 1: reinicializar el sensor (se queda colgado con frecuencia)
+            if (fallosDht % DHT_FALLOS_REINIT == 0)
+            {
+                Serial.println("Reinicializando sensor DHT...");
+                dht.begin();
+                delay(1000);
+            }
+
+            // Recuperación 2: reiniciar el ESP, pero sólo si lleva mucho tiempo
+            // sin lectura válida (si no, se quedaría en un bucle de reinicios)
+            if (fallosDht >= DHT_FALLOS_REBOOT)
+            {
+                unsigned long sinLectura = (ultimaLecturaOk == 0) ? now : (now - ultimaLecturaOk);
+                if (sinLectura >= REBOOT_SIN_LECTURA_MS)
+                {
+                    Serial.println("Sensor sin respuesta: reiniciando dispositivo...");
+                    delay(100);
+                    ESP.restart();
+                }
+            }
         }
         Serial.print("ROOM #");
         Serial.print(ROOM_ID);
@@ -110,123 +146,184 @@ void readData()
         Serial.print(lastTemp);
         Serial.print("C  Hum: ");
         Serial.print(lastHum);
-        Serial.print("% (");
-        unsigned long ms_rest = 0;
-        if (lastEnvio == 0)
-        {
-            ms_rest = 0;
-        }
-        else if (now >= lastEnvio)
-        {
-            ms_rest = (lastEnvio + ENVIO_DELAY > now) ? (lastEnvio + ENVIO_DELAY - now) : 0;
-        }
-        else
-        {
-            ms_rest = 0;
-        }
+        Serial.print("% (edad ");
+        Serial.print(edadUltimaLecturaSeg());
+        Serial.print("s, fallos ");
+        Serial.print(fallosDht);
+        Serial.print(", ");
+        unsigned long ahora = millis();
+        unsigned long ms_rest = (proximoEnvio > ahora) ? (proximoEnvio - ahora) : 0;
         Serial.print(ms_rest / 1000);
         Serial.println("s para envío)");
     }
 }
 
 
+long edadUltimaLecturaSeg()
+{
+    if (ultimaLecturaOk == 0)
+    {
+        return -1;
+    }
+    return (long)((millis() - ultimaLecturaOk) / 1000UL);
+}
+
+
 void sendData(bool force)
 {
-    bool readyToSend = false;
-    if (force || (!lastSent && WiFi.status() == WL_CONNECTED && !isnan(lastTemp) && !isnan(lastHum)))
+    if (!force && now < proximoEnvio)
     {
-        readyToSend = true;
-        lastSent = true;
+        return;
     }
-    else if (lastSent && (now - lastEnvio >= ENVIO_DELAY))
+
+    if (WiFi.status() != WL_CONNECTED)
     {
-        readyToSend = true;
+        Serial.println("No se envía: sin WiFi. Reintentando en 15 s.");
+        proximoEnvio = now + REINTENTO_SIN_WIFI_MS;
+        return;
     }
-    if (readyToSend)
+
+    // Si se fuerza el envío, intentar leer el sensor ahora
+    if (force)
     {
-        if (WiFi.status() == WL_CONNECTED && !isnan(lastTemp) && !isnan(lastHum))
+        float t = NAN, h = NAN;
+        if (readDht(t, h))
         {
-            // ...envío normal...
-            HTTPClient https;
-            String url = SENSOR_URL;
-            url.replace("%TEMPERATURE%", String(lastTemp));
-            url.replace("%HUMIDITY%",   String(lastHum));
-            url.replace("%ROOM_ID%",   String(ROOM_ID));
-            url.replace("%APIKEY_PASS%",  APIKEY_PASS);
-            url.replace("%VERSION%", VERSION);
-            Serial.print("Enviando: ");
-            Serial.println(url);
-            if (https.begin(client, url))
+            lastTemp = t;
+            lastHum = h;
+            ultimaLecturaOk = now;
+            fallosDht = 0;
+        }
+    }
+
+    // Nunca se envían valores viejos: si la última lectura válida no es reciente,
+    // no se manda nada (Django no cambia) y se reintenta en 15 s
+    long edad = edadUltimaLecturaSeg();
+    if (edad < 0 || (unsigned long)edad * 1000UL > MAX_EDAD_ENVIO_MS)
+    {
+        if (!avisadoSinDatos)
+        {
+            Serial.print("No se envía: sin lectura válida reciente (edad ");
+            Serial.print(edad);
+            Serial.println(" s). Reintentando cada 15 s.");
+            avisadoSinDatos = true;
+        }
+        proximoEnvio = now + REINTENTO_SIN_DATOS_MS;
+        return;
+    }
+    avisadoSinDatos = false;
+
+    HTTPClient https;
+    String url = SENSOR_URL;
+    url.replace("%TEMPERATURE%", String(lastTemp));
+    url.replace("%HUMIDITY%",   String(lastHum));
+    url.replace("%ROOM_ID%",   String(ROOM_ID));
+    url.replace("%APIKEY_PASS%",  APIKEY_PASS);
+    url.replace("%VERSION%", VERSION);
+    Serial.print("Enviando: ");
+    Serial.println(url);
+
+    // Acotar el tiempo de espera y cerrar cualquier sesión TLS previa: sin esto
+    // una conexión atascada deja el equipo sin enviar para siempre
+    client.stop();
+    https.setTimeout(HTTP_TIMEOUT_MS);
+
+    if (https.begin(client, url))
+    {
+        int code = https.GET();
+        ESP.wdtFeed();
+        Serial.print("HTTP code: ");
+        Serial.println(code);
+        String payload = https.getString();
+        Serial.print("Respuesta servidor: ");
+        Serial.println(payload);
+        // Analizar el valor de result
+        int pos = payload.indexOf("result=");
+        if (pos != -1)
+        {
+            int fin = payload.indexOf('&', pos);
+            String result = (fin != -1) ? payload.substring(pos + 7, fin) : payload.substring(pos + 7);
+            if (result == "ok")
             {
-                int code = https.GET();
-                Serial.print("HTTP code: ");
-                Serial.println(code);
-                String payload = https.getString();
-                Serial.print("Respuesta servidor: ");
-                Serial.println(payload);
-                // Analizar el valor de result
-                int pos = payload.indexOf("result=");
-                if (pos != -1)
+                Serial.println("Servidor: OK");
+            }
+            else if (result == "error")
+            {
+                // Mostrar el mensaje del servidor si existe
+                int posMsg = payload.indexOf("message=");
+                if (posMsg != -1)
                 {
-                    int fin = payload.indexOf('&', pos);
-                    String result = (fin != -1) ? payload.substring(pos + 7, fin) : payload.substring(pos + 7);
-                    if (result == "ok")
-                    {
-                        Serial.println("Servidor: OK");
-                    }
-                    else if (result == "error")
-                    {
-                        // Mostrar el mensaje del servidor si existe
-                        int posMsg = payload.indexOf("message=");
-                        if (posMsg != -1)
-                        {
-                            int finMsg = payload.indexOf('&', posMsg);
-                            String message = (finMsg != -1) ? payload.substring(posMsg + 8, finMsg) : payload.substring(posMsg + 8);
-                            Serial.print("Mensaje del servidor: ");
-                            Serial.println(message);
-                        }
-                        Serial.println("Servidor: ERROR");
-                    }
-                    else if (result == "update")
-                    {
-                        Serial.println("Servidor: UPDATE");
-                        otaUpdate();
-                    }
-                    else
-                    {
-                        Serial.print("Servidor: Respuesta desconocida: ");
-                        Serial.println(result);
-                    }
+                    int finMsg = payload.indexOf('&', posMsg);
+                    String message = (finMsg != -1) ? payload.substring(posMsg + 8, finMsg) : payload.substring(posMsg + 8);
+                    Serial.print("Mensaje del servidor: ");
+                    Serial.println(message);
                 }
-                else
-                {
-                    Serial.println("No se encontró 'result' en la respuesta del servidor.");
-                }
-                https.end();
-                lastEnvio = now;
+                Serial.println("Servidor: ERROR");
+            }
+            else if (result == "update")
+            {
+                Serial.println("Servidor: UPDATE");
+                otaUpdate();
             }
             else
             {
-                Serial.println("Error iniciando HTTPS");
-            }
-        }
-        else if (force)
-        {
-            Serial.println("[SEND DATA] No hay datos válidos, intentando leer sensor...");
-            float t = NAN, h = NAN;
-            if (readDht(t, h)) {
-                lastTemp = t;
-                lastHum = h;
-                Serial.println("[SEND DATA] Lectura de sensor exitosa, reintentando envío...");
-                sendData(false); // Llama de nuevo sin force para evitar bucle
-            } else {
-                Serial.println("[SEND DATA] No se pudo obtener datos válidos del sensor. No se envía.");
+                Serial.print("Servidor: Respuesta desconocida: ");
+                Serial.println(result);
             }
         }
         else
         {
-            Serial.println("No se envía: sin WiFi o sin datos válidos.");
+            Serial.println("No se encontró 'result' en la respuesta del servidor.");
         }
+        https.end();
+
+        // Si el servidor no ha contestado bien, reintentar antes (30 s)
+        if (code == 200)
+        {
+            fallosEnvio = 0;
+            proximoEnvio = now + ENVIO_DELAY;
+        }
+        else
+        {
+            fallosEnvio++;
+            proximoEnvio = now + REINTENTO_ERROR_MS;
+        }
+    }
+    else
+    {
+        fallosEnvio++;
+        Serial.println("Error iniciando HTTPS. Reintentando en 30 s.");
+        proximoEnvio = now + REINTENTO_ERROR_MS;
+    }
+
+    if (fallosEnvio > 0)
+    {
+        Serial.print("Envíos fallidos seguidos: ");
+        Serial.println(fallosEnvio);
+    }
+
+    // WiFi arriba pero el servidor no responde: reiniciar (la red del ESP puede
+    // haberse quedado en un estado del que no sale sola)
+    if (fallosEnvio >= ENVIOS_FALLIDOS_REBOOT)
+    {
+        Serial.println("Demasiados envíos fallidos: reiniciando dispositivo...");
+        delay(100);
+        ESP.restart();
+    }
+}
+
+
+// Watchdog: lo llama un Ticker cada segundo. Si loop() lleva demasiado tiempo
+// sin avanzar (p.ej. un GET() colgado), reinicia el equipo.
+void watchdogComprobar()
+{
+    if (!watchdogActivo)
+    {
+        return;
+    }
+    if (millis() - ultimoLoopMs > WATCHDOG_LIMITE_MS)
+    {
+        ESP.restart();
     }
 }
 
@@ -271,20 +368,5 @@ void connectWifi()
     {
         if (wifiReintentos > 0) Serial.println("[DEBUG] ¡WiFi conectado!");
         wifiReintentos = 0;
-    }
-}
-
-
-// Watchdog: lo llama un Ticker cada segundo. Si loop() lleva demasiado tiempo
-// sin avanzar (p.ej. un GET() colgado), reinicia el equipo.
-void watchdogComprobar()
-{
-    if (!watchdogActivo)
-    {
-        return;
-    }
-    if (millis() - ultimoLoopMs > WATCHDOG_LIMITE_MS)
-    {
-        ESP.restart();
     }
 }

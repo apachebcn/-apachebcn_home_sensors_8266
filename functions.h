@@ -7,10 +7,9 @@
 // Global variables (defined in functions.cpp)
 extern unsigned long now;
 extern unsigned long lastLectura;
-extern unsigned long lastEnvio;
+extern unsigned long proximoEnvio;
 extern float lastTemp;
 extern float lastHum;
-extern bool lastSent;
 
 // Watchdog del loop (lo alimenta loop() y lo vigila un Ticker)
 extern volatile unsigned long ultimoLoopMs;
@@ -20,6 +19,7 @@ const char* getRoomName(int id);
 bool testRange(float t, float h);
 bool readDht(float &t, float &h);
 void readData();
+long edadUltimaLecturaSeg();
 void watchdogComprobar();
 
 // Temperature and humidity sensor functions
