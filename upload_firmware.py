@@ -3,6 +3,7 @@
 import os
 import sys
 import re
+import glob
 import shutil
 import subprocess
 
@@ -11,6 +12,9 @@ import subprocess
 # ─────────────────────────────────────────────────────────────
 
 only_print_variables = False
+
+# Si es False, el script se niega a publicar un binario que no corresponde a version.h
+permitir_binario_desactualizado = False
 
 # Ruta física en el servidor remoto donde se alojan los archivos OTA
 remote_path = "/home/apachebcn/web/otasensors.pedroreinarojas.com/public_html"
@@ -48,6 +52,19 @@ def extract_define_value(file_path, define_name):
                 return value
     return None
 
+
+def binario_corresponde_a_version(file_path, version):
+    """El literal de VERSION queda embebido en el binario compilado"""
+    with open(file_path, 'rb') as f:
+        return version.encode() in f.read()
+
+
+def fuentes_mas_nuevas_que(bin_path):
+    """Fuentes modificados después de compilar = binario obsoleto"""
+    mtime_bin = os.path.getmtime(bin_path)
+    fuentes = glob.glob('./*.ino') + glob.glob('./*.cpp') + glob.glob('./*.h')
+    return sorted(f for f in fuentes if os.path.getmtime(f) > mtime_bin)
+
 # ─────────────────────────────────────────────────────────────
 # 🚧 VERIFICACIÓN DE ENTORNO
 # ─────────────────────────────────────────────────────────────
@@ -61,6 +78,9 @@ if not os.path.isfile(local_pathfile_built_bin):
 # ─────────────────────────────────────────────────────────────
 
 version = extract_define_value(version_file, 'VERSION')
+if version is None:
+    print(f"❌ ERROR: No se pudo leer VERSION de {version_file}.")
+    sys.exit(1)
 
 # ─────────────────────────────────────────────────────────────
 # 📋 MOSTRAR VARIABLES
@@ -76,6 +96,29 @@ print(f"{GREEN}REMOTE_PATH:{RESET} {remote_path}")
 if (only_print_variables):
     print(f"{RED}END WITH ONLY PRINT VARIABLES{RESET}")
     sys.exit(0)
+
+# ─────────────────────────────────────────────────────────────
+# 🚦 VALIDACIÓN: EL BINARIO DEBE SER EL QUE CORRESPONDE AL CÓDIGO ACTUAL
+# ─────────────────────────────────────────────────────────────
+
+problemas = []
+if not binario_corresponde_a_version(local_pathfile_built_bin, version):
+    problemas.append(f"el binario no contiene la versión {version} de {version_file} (es de otra compilación)")
+nuevas = fuentes_mas_nuevas_que(local_pathfile_built_bin)
+if nuevas:
+    problemas.append("hay fuentes más recientes que el binario: " + ", ".join(nuevas))
+
+if problemas:
+    print(f"\n\r{RED}❌ El binario compilado NO corresponde al código actual:{RESET}")
+    for p in problemas:
+        print(f"   - {p}")
+    if not permitir_binario_desactualizado:
+        print("\n\rCompila el proyecto (Arduino IDE: Sketch → Verificar/Compilar) y vuelve a ejecutar el script.")
+        print("Publicarlo así anunciaría una versión nueva sirviendo la anterior.")
+        sys.exit(1)
+    print(f"{RED}⚠️  Se sube igualmente (permitir_binario_desactualizado = True){RESET}")
+else:
+    print(f"\n\r✅ El binario corresponde a la versión {version}")
 
 # ─────────────────────────────────────────────────────────────
 # 🛠️ PREPARACIÓN DE ARCHIVOS LOCALES

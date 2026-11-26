@@ -6,7 +6,7 @@
 
 char WIFI_USER[32] = "";
 char WIFI_PASS[32] = "";
-int ROOM_ID = 1;
+int ROOM_ID = 0;
 
 #define EEPROM_SIZE 128
 #define ADDR_WIFI_USER 0
